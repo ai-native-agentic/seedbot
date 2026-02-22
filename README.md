@@ -1,6 +1,6 @@
 # SeedBot: a self-evolving personal assistant
 
-A bootstrapper to turns [Codex](https://openai.com/codex/) into a personal assistant.
+A bootstrapper that turns [Codex](https://openai.com/codex/) into a personal assistant.
 
 SeedBot starts with only two abilities: **coding** and **terminal input**. From there, it can build new capabilities upon requests.
 
