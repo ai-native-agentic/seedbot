@@ -39,13 +39,13 @@ process_response() { # $1=source_name, $2=user_query, $3=codex_response
   if [[ -x "$ROOT_DIR/memory/save.sh" ]]; then
     run_with_timeout 300 "$ROOT_DIR/memory/save.sh" "$1" "$2" "$3" 2>>"$ERROR_LOG"
   fi
-  printf 'USER: %s\nASSISTANT: %s\n' "$2" "$3" >> "$ROOT_DIR/memory/context.md"
+  printf 'Response to request "%s" from [%s]:\n %s\n' "$2" "$1" "$3" >> "$ROOT_DIR/memory/context.md"
   _unlock
 }
 
 run_codex() { # $1=user_message, $2=memory_text
   local agent_file="$ROOT_DIR/workspace/agent_$BASHPID.md"
-  printf '# Agent %s\n- request: %s\n' "${1:0:200}" > "$agent_file"
+  printf '# Agent %s\n- request: %s\n' "$1" > "$agent_file"
 
   local payload="SYSTEM_PROMPT:\n$(cat "$ROOT_DIR/system.md")\n\nMEMORY_CONTEXT:\n$2\n\nAGENT_FILE:\n$agent_file\n\nUSER_INSTRUCTION:\n$1\n"
   if (( VERBOSE )); then
@@ -61,6 +61,7 @@ run_codex() { # $1=user_message, $2=memory_text
 handle_message() { # $1=source_name, $2=message
   local memory_text response
   memory_text="$(tail -n 500 "$ROOT_DIR/memory/context.md" 2>/dev/null)"
+  printf 'Received message from [%s]: %s\n' "$1" "$2" >> "$ROOT_DIR/memory/context.md"
   printf '\nassistant> Receive message from [%s], processing...\n' "$1"
   response="$(run_codex "$2" "$memory_text")"
   printf '%s\n' "$response"
