@@ -34,6 +34,16 @@ run_with_timeout() { # $1=timeout_secs, rest=command...
   return "$rc"
 }
 
+load_memory() { # $1=source_name, $2=message
+  if [[ -x "$ROOT_DIR/memory/load.sh" ]]; then
+    run_with_timeout 10 "$ROOT_DIR/memory/load.sh" "$1" "$2" || {
+      [[ -f "$ROOT_DIR/memory/context.md" ]] && tail -n 500 "$ROOT_DIR/memory/context.md"
+    }
+  elif [[ -f "$ROOT_DIR/memory/context.md" ]]; then
+    tail -n 500 "$ROOT_DIR/memory/context.md"
+  fi
+}
+
 process_response() { # $1=source_name, $2=user_query, $3=codex_response
   _lock
   printf 'Response to request "%s" from [%s]:\n %s\n' "$2" "$1" "$3" >> "$ROOT_DIR/memory/context.md"
@@ -60,7 +70,7 @@ run_codex() { # $1=user_message, $2=memory_text
 
 handle_message() { # $1=source_name, $2=message
   local memory_text response
-  memory_text="$(tail -n 500 "$ROOT_DIR/memory/context.md" 2>/dev/null)"
+  memory_text="$(load_memory "$1" "$2" || true)"
   printf 'Received message from [%s]: %s\n' "$1" "$2" >> "$ROOT_DIR/memory/context.md"
   printf '\nassistant> Receive message from [%s], processing...\n' "$1"
   response="$(run_codex "$2" "$memory_text")"
