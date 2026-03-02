@@ -12,7 +12,7 @@ Inspired by [OpenClaw](https://github.com/openclaw/openclaw) and [nanobot](https
 
 - [x] Cross compare with nanobot.
 - [x] Add timeout to prevent blocking calls.
-- [ ] Support non-blocking launch of codex while still stick with <100 lines of code.
+- [x] Support non-blocking launch of codex while still stick with <100 lines of code.
 
 ## Prerequisites
 
@@ -21,10 +21,11 @@ Inspired by [OpenClaw](https://github.com/openclaw/openclaw) and [nanobot](https
 
 ## Quick Start
 
-On macOS, install GNU coreutils and alias `timeout` to `gtimeout` first:
+On macOS, install GNU coreutils and alias `timeout` to `gtimeout`. Also need to upgrade Bash since MacOS comes with an outdated Bash.
 
 ```bash
 brew install coreutils
+brew install bash
 alias timeout=gtimeout
 ```
 
