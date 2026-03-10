@@ -1,0 +1,14 @@
+# .harness/config.yaml — seedbot QA gate configuration
+# Minimal harness for Bash project (<100 LOC).
+
+project: seedbot
+language: bash
+
+# Gate enable/disable
+gates:
+  gate_a: true   # syntax check (shellcheck or bash -n)
+  gate_b: false  # unused
+  gate_c: false  # unused
+  gate_d: false  # unused
+  gate_e: false  # unused
+  gate_f: false  # unused
