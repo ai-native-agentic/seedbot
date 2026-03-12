@@ -4,5 +4,6 @@
 !.gitignore
 !README.md
 !LICENSE
+!Dockerfile
 !assets/
 !assets/*.png
