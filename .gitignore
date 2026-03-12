@@ -7,3 +7,6 @@
 !Dockerfile
 !assets/
 !assets/*.png
+!.github/
+!.github/workflows/
+!.github/workflows/ci.yml
