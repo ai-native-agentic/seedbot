@@ -14,24 +14,36 @@ LOCK_DIR="$ROOT_DIR/memory/.lock"
 
 mkdir -p "$ROOT_DIR/memory" "$ROOT_DIR/inputs.d" "$ROOT_DIR/functions" "$ROOT_DIR/workspace" "$ROOT_DIR/logs"
 
+# Error handler for untrapped errors
+error_handler() {
+  local line_no="$1"
+  local error_code="$2"
+  printf '[%s] Error on line %d: exit code %d\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$line_no" "$error_code" >> "$ERROR_LOG"
+}
+
+trap 'error_handler ${LINENO} $?' ERR
+
 _lock()   { while ! mkdir "$LOCK_DIR" 2>/dev/null; do sleep 0.1; done; }
-_unlock() { rmdir "$LOCK_DIR" 2>/dev/null; }
+_unlock() { rmdir "$LOCK_DIR" 2>/dev/null; true; }
 
 run_with_timeout() { # $1=timeout_secs, rest=command...
   local timeout_secs="$1" cmd="$2" rc
   shift 2
   local label="$(basename "$cmd")${*:+ $*}"
-  timeout --signal=TERM --kill-after=5 "${timeout_secs}s" "$cmd" "$@"
-  rc=$?
-  case "$rc" in
-    124|143)
-    printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$label timed out after ${timeout_secs}s" >> "$ERROR_LOG"
-    return 124
-    ;;
-    0) ;;
-    *) printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$label failed" >> "$ERROR_LOG" ;;
-  esac
-  return "$rc"
+  if ! timeout --signal=TERM --kill-after=5 "${timeout_secs}s" "$cmd" "$@"; then
+    rc=$?
+    case "$rc" in
+      124|143)
+        printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$label timed out after ${timeout_secs}s" >> "$ERROR_LOG"
+        return 124
+        ;;
+      *)
+        printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$label failed with code $rc" >> "$ERROR_LOG"
+        return "$rc"
+        ;;
+    esac
+  fi
+  return 0
 }
 
 load_memory() { # $1=source_name, $2=message
@@ -58,28 +70,46 @@ run_codex() { # $1=user_message, $2=memory_text
   printf '# Agent %s\n- request: %s\n' "$1" > "$agent_file"
 
   local payload="SYSTEM_PROMPT:\n$(cat "$ROOT_DIR/system.md")\n\nMEMORY_CONTEXT:\n$2\n\nAGENT_FILE:\n$agent_file\n\nUSER_INSTRUCTION:\n$1\n"
+  local rc=0
   if (( VERBOSE )); then
-    printf '%b\n' "$payload" | codex exec --sandbox danger-full-access --yolo --skip-git-repo-check - 2> >(tee -a "$ERROR_LOG" >&2)
+    printf '%b\n' "$payload" | codex exec --sandbox danger-full-access --yolo --skip-git-repo-check - 2> >(tee -a "$ERROR_LOG" >&2) || rc=$?
   else
-    printf '%b\n' "$payload" | codex exec --sandbox danger-full-access --yolo --skip-git-repo-check - 2>>"$ERROR_LOG"
+    printf '%b\n' "$payload" | codex exec --sandbox danger-full-access --yolo --skip-git-repo-check - 2>>"$ERROR_LOG" || rc=$?
   fi
-  (( $? )) && printf 'assistant> Error: codex failed, check %s\n' "$ERROR_LOG"
+
+  if (( rc != 0 )); then
+    printf '[%s] codex failed with exit code %d\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$rc" >> "$ERROR_LOG"
+    printf 'assistant> Error: codex failed (exit %d), check %s\n' "$rc" "$ERROR_LOG"
+  fi
 
   rm -f "$agent_file"
+  return "$rc"
 }
 
 handle_message() { # $1=source_name, $2=message
-  local memory_text response
+  local memory_text response rc=0
   memory_text="$(load_memory "$1" "$2" || true)"
   printf 'Received message from [%s]: %s\n' "$1" "$2" >> "$ROOT_DIR/memory/context.md"
   printf '\nassistant> Receive message from [%s], processing...\n' "$1"
-  response="$(run_codex "$2" "$memory_text")"
+  response="$(run_codex "$2" "$memory_text")" || rc=$?
   printf '%s\n' "$response"
   printf '================end of response=================\n'
-  process_response "$1" "$2" "$response"
+  process_response "$1" "$2" "$response" || {
+    printf '[%s] Failed to process response from [%s]\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$ERROR_LOG"
+  }
+  return "$rc"
 }
 
-trap 'rmdir "$LOCK_DIR" 2>/dev/null; rm -f "$ROOT_DIR"/workspace/agent_*.md; kill 0 2>/dev/null; wait' EXIT
+cleanup() {
+  rmdir "$LOCK_DIR" 2>/dev/null || true
+  rm -f "$ROOT_DIR"/workspace/agent_*.md 2>/dev/null || true
+  kill 0 2>/dev/null || true
+  wait 2>/dev/null || true
+}
+
+trap cleanup EXIT
+trap 'printf "\nassistant> Interrupted. Cleaning up...\n"; exit 130' INT
+trap 'printf "\nassistant> Received TERM. Cleaning up...\n"; exit 143' TERM
 
 printf 'assistant> type a message, or Ctrl-C to quit.\n'
 
