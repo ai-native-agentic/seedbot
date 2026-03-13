@@ -18,10 +18,23 @@ mkdir -p "$ROOT_DIR/memory" "$ROOT_DIR/inputs.d" "$ROOT_DIR/functions" "$ROOT_DI
 error_handler() {
   local line_no="$1"
   local error_code="$2"
-  printf '[%s] Error on line %d: exit code %d\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$line_no" "$error_code" >> "$ERROR_LOG"
+  local timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+  printf '[%s] Error on line %d: exit code %d\n' "$timestamp" "$line_no" "$error_code" >> "$ERROR_LOG"
+  printf 'assistant> Error occurred at line %d (code %d). Check %s for details.\n' "$line_no" "$error_code" "$ERROR_LOG" >&2
 }
 
 trap 'error_handler ${LINENO} $?' ERR
+
+# Cleanup trap for exit
+exit_trap() {
+  local exit_code=$?
+  if (( exit_code != 0 )); then
+    printf '[%s] Exiting with code %d\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$exit_code" >> "$ERROR_LOG"
+  fi
+  cleanup
+  exit "$exit_code"
+}
+trap exit_trap EXIT
 
 _lock()   { while ! mkdir "$LOCK_DIR" 2>/dev/null; do sleep 0.1; done; }
 _unlock() { rmdir "$LOCK_DIR" 2>/dev/null; true; }
@@ -67,10 +80,13 @@ process_response() { # $1=source_name, $2=user_query, $3=codex_response
 
 run_codex() { # $1=user_message, $2=memory_text
   local agent_file="$ROOT_DIR/workspace/agent_$BASHPID.md"
-  printf '# Agent %s\n- request: %s\n' "$1" > "$agent_file"
+  local rc=0
+  printf '# Agent %s\n- request: %s\n' "$1" > "$agent_file" || {
+    printf '[%s] Failed to create agent file\n' "$(date '+%Y-%m-%d %H:%M:%S')" >> "$ERROR_LOG"
+    return 1
+  }
 
   local payload="SYSTEM_PROMPT:\n$(cat "$ROOT_DIR/system.md")\n\nMEMORY_CONTEXT:\n$2\n\nAGENT_FILE:\n$agent_file\n\nUSER_INSTRUCTION:\n$1\n"
-  local rc=0
   if (( VERBOSE )); then
     printf '%b\n' "$payload" | codex exec --sandbox danger-full-access --yolo --skip-git-repo-check - 2> >(tee -a "$ERROR_LOG" >&2) || rc=$?
   else
@@ -82,7 +98,7 @@ run_codex() { # $1=user_message, $2=memory_text
     printf 'assistant> Error: codex failed (exit %d), check %s\n' "$rc" "$ERROR_LOG"
   fi
 
-  rm -f "$agent_file"
+  rm -f "$agent_file" || true
   return "$rc"
 }
 
@@ -107,9 +123,19 @@ cleanup() {
   wait 2>/dev/null || true
 }
 
-trap cleanup EXIT
-trap 'printf "\nassistant> Interrupted. Cleaning up...\n"; exit 130' INT
-trap 'printf "\nassistant> Received TERM. Cleaning up...\n"; exit 143' TERM
+# Signal handlers
+handle_int() {
+  printf '\nassistant> Interrupted (Ctrl+C). Cleaning up...\n'
+  exit 130
+}
+
+handle_term() {
+  printf '\nassistant> Received TERM signal. Cleaning up...\n'
+  exit 143
+}
+
+trap handle_int INT
+trap handle_term TERM
 
 printf 'assistant> type a message, or Ctrl-C to quit.\n'
 
