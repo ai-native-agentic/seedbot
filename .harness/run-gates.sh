@@ -43,6 +43,16 @@ else
     run_gate "gate_a" "bash -n syntax" "bash -n main.sh"
 fi
 
+# Gate E: bash -n syntax validation
+run_gate "gate_e" "bash -n syntax validation" "bash -n main.sh"
+
+# Gate F: shellcheck linting
+if command -v shellcheck &>/dev/null; then
+    run_gate "gate_f" "shellcheck linting" "shellcheck main.sh"
+else
+    printf "  %-18s ... ${YELLOW}SKIP${NC} (shellcheck not found)\n" "shellcheck"
+fi
+
 echo ""
 echo "=== Results ==="
 echo -e "  ${GREEN}PASS: $PASS${NC}  ${RED}FAIL: $FAIL${NC}"
